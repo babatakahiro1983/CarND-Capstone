@@ -142,7 +142,7 @@ class WaypointUpdater(object):
             self.stop_waypoints(closestWaypoint, waypoints)
         else:
             self.go_waypoints(closestWaypoint, waypoints)
-        self.go_waypoints(closestWaypoint, waypoints)
+        # self.go_waypoints(closestWaypoint, waypoints)
 
     def publish(self):
         final_waypoints_msg = Lane()

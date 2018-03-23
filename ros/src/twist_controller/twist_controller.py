@@ -12,7 +12,7 @@ class Controller(object):
         self.accel_limit = accel_limit
         self.decel_limit = decel_limit
 
-        steer_kp = 0.6
+        steer_kp = 0.2
         steer_ki = 0.01
         steer_kd = 0.001
 
