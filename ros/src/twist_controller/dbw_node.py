@@ -86,6 +86,8 @@ class DBWNode(object):
 
     def twist_cmd_cb(self, msg):
         new_goal_acceleration = msg.twist.linear.x
+        rospy.loginfo('new_goal_acceleration: ')
+        rospy.loginfo(new_goal_acceleration)
         if new_goal_acceleration < 0 and self.goal_acceleration > 0:
             self.controller.reset_throttle_pid()
 

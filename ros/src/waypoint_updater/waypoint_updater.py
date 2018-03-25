@@ -62,7 +62,7 @@ class WaypointUpdater(object):
         rate = rospy.Rate(5)
         # setting
 
-        self.cruise_speed = 40.0
+        self.cruise_speed = rospy.get_param('~/waypoint_loader/velocity', 40.0)*0.278
         self.decel_limit = abs(rospy.get_param('~/twist_controller/decel_limit', -5))
         self.accel_limit = rospy.get_param('~/twist_controller/accel_limit', 1)
 
@@ -124,6 +124,8 @@ class WaypointUpdater(object):
 
     def go_waypoints(self, closestWaypoint, waypoints):
         init_vel = self.car_curr_vel
+        rospy.loginfo('init_vel: ')
+        rospy.loginfo(init_vel)
         end = closestWaypoint + LOOKAHEAD_WPS
         if end > len(waypoints) - 1:
            end = len(waypoints) - 1
@@ -133,6 +135,8 @@ class WaypointUpdater(object):
             velocity = math.sqrt(init_vel**2 + 2 * a * dist)
             if velocity > self.cruise_speed:
                velocity = self.cruise_speed
+            # rospy.loginfo('velocity: ')
+            # rospy.loginfo(velocity)
             self.set_waypoint_velocity(waypoints, idx, velocity)
             self.final_waypoints.append(waypoints[idx])
 
