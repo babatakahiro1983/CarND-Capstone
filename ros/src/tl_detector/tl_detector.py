@@ -3,8 +3,8 @@ import rospy
 import numpy as np
 from keras.models import load_model
 from std_msgs.msg import Int32
-from geometry_msgs.msg import PoseStamped, Pose
-from styx_msgs.msg import TrafficLightArray, TrafficLight
+from geometry_msgs.msg import PoseStamped, Pose, TwistStamped
+from styx_msgs.msg import TrafficLightArray, TrafficLight, CustomTrafficLight
 from styx_msgs.msg import Lane
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
@@ -12,12 +12,13 @@ from light_classification.tl_classifier import TLClassifier
 import tensorflow as tf
 import cv2
 import yaml
+import math
 from math import pow, sqrt
 from keras import backend as K
 
 import matplotlib.pyplot as plt
 
-STATE_COUNT_THRESHOLD = 3
+STATE_COUNT_THRESHOLD = 7
 SMOOTH = 1.
 
 def dice_coef(y_true, y_pred):
@@ -39,7 +40,7 @@ class TLDetector(object):
         self.camera_image = None
         self.detector_model = None
         self.lights = []
-        self.distance_to_tl_threshold = 67
+        self.distance_to_tl_threshold = 40
         self.state = TrafficLight.UNKNOWN
         self.last_wp = -1
         self.state_count = 0
@@ -70,9 +71,13 @@ class TLDetector(object):
         self.ctr = 0
         self.ctr_2 = 0
         self.dist_pre = 0
+        self.last_state = TrafficLight.UNKNOWN
+        self.car_curr_vel = None
+        self.car_dist = 0
 
         sub1 = rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         sub2 = rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
+        rospy.Subscriber('/current_velocity', TwistStamped, self.current_velocity_cb)
 
         '''
         /vehicle/traffic_lights provides you with the location of the traffic light in 3D map space and
@@ -84,7 +89,7 @@ class TLDetector(object):
         sub3 = rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray, self.traffic_cb)
         sub6 = rospy.Subscriber('/image_color', Image, self.image_cb)
 
-        self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', Int32, queue_size=1)
+        self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', CustomTrafficLight, queue_size=1)
 
         self.bridge = CvBridge()
 
@@ -120,6 +125,10 @@ class TLDetector(object):
         self.has_image = True
         self.camera_image = msg
 
+    def current_velocity_cb(self, msg):
+        curr_lin = [msg.twist.linear.x, msg.twist.linear.y]
+        self.car_curr_vel = math.sqrt(curr_lin[0]**2 + curr_lin[1]**2)
+
     def find_traffic_lights(self):
         light_wp, state = self.process_traffic_lights()
 
@@ -129,6 +138,29 @@ class TLDetector(object):
         of times till we start using it. Otherwise the previous stable state is
         used.
         '''
+        if state == 0 or state == 2:
+            tl_result = CustomTrafficLight()
+            tl_result.state = state
+            tmp = self.car_dist * 1000
+            tl_result.dist = int(tmp)
+            self.upcoming_red_light_pub.publish(tl_result)
+            self.last_state = state
+            self.state_count = 0
+        else:
+            if self.last_state == 0 and self.state_count <= STATE_COUNT_THRESHOLD and self.car_curr_vel < 0.5:
+                tl_result = CustomTrafficLight()
+                tl_result.state = self.last_state
+                tmp = self.car_dist * 1000
+                tl_result.dist = int(tmp)
+                self.upcoming_red_light_pub.publish(tl_result)
+                self.state_count += 1
+            else:
+                tl_result = CustomTrafficLight()
+                tl_result.state = state
+                tmp = self.car_dist * 1000
+                tl_result.dist = int(tmp)
+                self.upcoming_red_light_pub.publish(tl_result)
+                self.state_count += 1
         '''
         if self.state != state:
             self.state_count = 0
@@ -145,8 +177,6 @@ class TLDetector(object):
             self.upcoming_red_light_pub.publish(Int32(self.last_state))
         self.state_count += 1
         '''
-        self.upcoming_red_light_pub.publish(Int32(state))
-
     def _prepare_result_msg(self, tl_state, tl_stop_waypoint):
         tl_result = CustomTrafficLight()
         tl_result.state = tl_state
@@ -286,15 +316,17 @@ class TLDetector(object):
 
                 closest_wp = self.waypoints[wp_id]
                 waypoint_dist = self.dist_to_point(closest_wp.pose.pose, tl.pose.pose)
-                car_dist = self.dist_to_point(self.pose.pose, stop_line_pose)
-                rospy.loginfo(car_dist)
+                self.car_dist = self.dist_to_point(self.pose.pose, stop_line_pose)
+                rospy.loginfo(self.car_dist)
                 state = TrafficLight.UNKNOWN
-                if (car_dist<self.distance_to_tl_threshold and car_dist < self.dist_pre):
+                if (self.car_dist<self.distance_to_tl_threshold and self.car_dist <= self.dist_pre):
                     cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, self.color_mode)
                     tl_image = self.detect_traffic_light(cv_image)
                     if tl_image is not None:
                         state = self.light_classifier.get_classification(tl_image)
                         rospy.loginfo("[TL_DETECTOR] TL is detected")
+                        rospy.loginfo("distance")
+                        rospy.loginfo(self.car_dist)
 
 
                         if state == 0:
@@ -310,13 +342,13 @@ class TLDetector(object):
 
                         rospy.loginfo(state_txt)
 
-                        cv2.imwrite("Image_"+ str(self.ctr) + "_" + state_txt + "_" + str(car_dist) +"_.jpg", cv2.cvtColor(
+                        cv2.imwrite("Image_"+ str(self.ctr) + "_" + state_txt + "_" + str(self.car_dist) +"_.jpg", cv2.cvtColor(
                             tl_image,
                         cv2.COLOR_BGR2RGB))
                         self.ctr = self.ctr + 1
                 else:
                     state = TrafficLight.UNKNOWN
-                self.dist_pre = car_dist
+                self.dist_pre = self.car_dist
                 return wp_id, state
             else:
                 return -1, TrafficLight.UNKNOWN

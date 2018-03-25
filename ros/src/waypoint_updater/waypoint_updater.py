@@ -2,7 +2,7 @@
 
 import rospy
 from geometry_msgs.msg import PoseStamped, TwistStamped
-from styx_msgs.msg import Lane, Waypoint
+from styx_msgs.msg import Lane, Waypoint, CustomTrafficLight
 from std_msgs.msg import Int32
 
 import math
@@ -36,7 +36,7 @@ class WaypointUpdater(object):
         self.base_waypoints_sub = rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
         # rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
         rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
-        rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
+        rospy.Subscriber('/traffic_waypoint', CustomTrafficLight, self.traffic_cb)
         rospy.Subscriber('/obstacle_waypoint', Int32, self.obstacle_cb)
         rospy.Subscriber('/current_velocity', TwistStamped, self.current_velocity_cb)
 
@@ -52,6 +52,8 @@ class WaypointUpdater(object):
         self.waypoints = []
         self.final_waypoints = []
         self.tl_state = None
+        self.velocity = None
+        self.dist_to_stop = None
 
         # rospy.spin()
         
@@ -91,18 +93,15 @@ class WaypointUpdater(object):
         self.base_waypoints_sub.unregister()
 
     def traffic_cb(self, msg):
-        if msg.data == 0:
+        if msg.state == 0:
             self.tl_state = "RED"
-            # self.tl_idx = msg.waypoint
-        elif msg.data == 1:
+        elif msg.state == 1:
             self.tl_state = "YELLOW"
-            # self.tl_idx = msg.waypoint
-        elif msg.data == 2:
+        elif msg.state == 2:
             self.tl_state = "GREEN"
-            # self.tl_idx = msg.waypoint
-        elif msg.data == 4:
+        elif msg.state == 4:
             self.tl_state = "NO"
-            # self.tl_idx = msg.waypoint
+        self.dist_to_stop = float(msg.dist) / 1000
 
     def current_velocity_cb(self, msg):
         curr_lin = [msg.twist.linear.x, msg.twist.linear.y]
@@ -112,13 +111,15 @@ class WaypointUpdater(object):
         # TODO: Callback for /obstacle_waypoint message. We will implement it later
         self.obstacle_waypoint = msg.data
 
-    def stop_waypoints(self, closestWaypoint, waypoints):
+    def stop_waypoints(self, closestWaypoint, waypoints, velocity):
         init_vel = self.car_curr_vel
         end = closestWaypoint + LOOKAHEAD_WPS
         if end > len(waypoints) - 1:
             end = len(waypoints) - 1
+        rospy.loginfo('range(closestWaypoint, end)')
+        rospy.loginfo(range(closestWaypoint, end))
         for idx in range(closestWaypoint, end):
-            velocity = 0.0
+            # velocity = 0.0
             self.set_waypoint_velocity(waypoints, idx, velocity)
             self.final_waypoints.append(waypoints[idx])
 
@@ -142,11 +143,20 @@ class WaypointUpdater(object):
 
     def generate_final_waypoints(self, closestWaypoint, waypoints):
         self.final_waypoints = []
+        rospy.loginfo('self.dist_to_stop')
+        rospy.loginfo(self.dist_to_stop)
         if self.tl_state == "RED":
-            self.stop_waypoints(closestWaypoint, waypoints)
+            a = ACC_FACTOR * self.decel_limit
+            self.velocity = 0.3*self.dist_to_stop-1
+            if self.velocity > self.cruise_speed:
+                self.velocity = self.cruise_speed
+            elif self.velocity < 0:
+                self.velocity = 0
+            rospy.loginfo('self.velocity')
+            rospy.loginfo(self.velocity)
+            self.stop_waypoints(closestWaypoint, waypoints, self.velocity)
         else:
             self.go_waypoints(closestWaypoint, waypoints)
-        # self.go_waypoints(closestWaypoint, waypoints)
 
     def publish(self):
         final_waypoints_msg = Lane()
