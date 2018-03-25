@@ -6,7 +6,6 @@ from styx_msgs.msg import Lane, Waypoint, CustomTrafficLight
 from std_msgs.msg import Int32
 
 import math
-import tf
 
 '''
 This node will publish waypoints from the car's current position to some `x` distance ahead.
@@ -55,14 +54,11 @@ class WaypointUpdater(object):
         self.velocity = None
         self.dist_to_stop = None
 
-        # rospy.spin()
-        
         self.loop()
 
     # Main loop
     def loop(self):
         rate = rospy.Rate(5)
-        # setting
 
         self.cruise_speed = rospy.get_param('~/waypoint_loader/velocity', 40.0)*0.278
         self.decel_limit = abs(rospy.get_param('~/twist_controller/decel_limit', -5))
@@ -70,10 +66,8 @@ class WaypointUpdater(object):
 
         while not rospy.is_shutdown():
             if (self.car_position != None and self.waypoints != None and self.car_curr_vel != None):
-                self.closestWaypoint = self.NextWaypoint(self.car_position, self.car_yaw, self.waypoints)
+                self.closestWaypoint = self.closest_waypoint(self.car_position, self.waypoints)
                 self.generate_final_waypoints(self.closestWaypoint, self.waypoints)
-
-                # output
                 self.publish()
             else:
                 rospy.logwarn("Data not received")
@@ -82,10 +76,10 @@ class WaypointUpdater(object):
     def pose_cb(self, msg):
         car_pose = msg.pose
         self.car_position = car_pose.position
-        car_orientation = car_pose.orientation
-        quaternion = (car_orientation.x, car_orientation.y, car_orientation.z, car_orientation.w)
-        euler = tf.transformations.euler_from_quaternion(quaternion)
-        self.car_yaw = euler[2]
+        # car_orientation = car_pose.orientation
+        # quaternion = (car_orientation.x, car_orientation.y, car_orientation.z, car_orientation.w)
+        # euler = tf.transformations.euler_from_quaternion(quaternion)
+        # self.car_yaw = euler[2]
 
     def waypoints_cb(self, msg):
         for waypoint in msg.waypoints:
@@ -112,21 +106,15 @@ class WaypointUpdater(object):
         self.obstacle_waypoint = msg.data
 
     def stop_waypoints(self, closestWaypoint, waypoints, velocity):
-        init_vel = self.car_curr_vel
         end = closestWaypoint + LOOKAHEAD_WPS
         if end > len(waypoints) - 1:
             end = len(waypoints) - 1
-        rospy.loginfo('range(closestWaypoint, end)')
-        rospy.loginfo(range(closestWaypoint, end))
         for idx in range(closestWaypoint, end):
-            # velocity = 0.0
             self.set_waypoint_velocity(waypoints, idx, velocity)
             self.final_waypoints.append(waypoints[idx])
 
     def go_waypoints(self, closestWaypoint, waypoints):
         init_vel = self.car_curr_vel
-        rospy.loginfo('init_vel: ')
-        rospy.loginfo(init_vel)
         end = closestWaypoint + LOOKAHEAD_WPS
         if end > len(waypoints) - 1:
            end = len(waypoints) - 1
@@ -136,15 +124,11 @@ class WaypointUpdater(object):
             velocity = math.sqrt(init_vel**2 + 2 * a * dist)
             if velocity > self.cruise_speed:
                velocity = self.cruise_speed
-            # rospy.loginfo('velocity: ')
-            # rospy.loginfo(velocity)
             self.set_waypoint_velocity(waypoints, idx, velocity)
             self.final_waypoints.append(waypoints[idx])
 
     def generate_final_waypoints(self, closestWaypoint, waypoints):
         self.final_waypoints = []
-        rospy.loginfo('self.dist_to_stop')
-        rospy.loginfo(self.dist_to_stop)
         if self.tl_state == "RED":
             a = ACC_FACTOR * self.decel_limit
             self.velocity = 0.3*self.dist_to_stop-1
@@ -152,8 +136,6 @@ class WaypointUpdater(object):
                 self.velocity = self.cruise_speed
             elif self.velocity < 0:
                 self.velocity = 0
-            rospy.loginfo('self.velocity')
-            rospy.loginfo(self.velocity)
             self.stop_waypoints(closestWaypoint, waypoints, self.velocity)
         else:
             self.go_waypoints(closestWaypoint, waypoints)
@@ -180,20 +162,20 @@ class WaypointUpdater(object):
                 closestWaypoint = idx
         return closestWaypoint
 
-    def NextWaypoint(self, position, yaw, waypoints):
+    # def NextWaypoint(self, position, yaw, waypoints):
         closestWaypoint = self.closest_waypoint(position, waypoints)
-        map_x = waypoints[closestWaypoint].pose.pose.position.x
-        map_y = waypoints[closestWaypoint].pose.pose.position.y
-        heading = math.atan2((map_y - position.y), (map_x - position.x))
-        angle = abs(yaw - heading)
-        if (angle > math.pi/4):
-            closestWaypoint += 1
-            if (closestWaypoint > len(waypoints)-1):
-                closestWaypoint -= 1
-        return closestWaypoint
+        # map_x = waypoints[closestWaypoint].pose.pose.position.x
+        # map_y = waypoints[closestWaypoint].pose.pose.position.y
+        # heading = math.atan2((map_y - position.y), (map_x - position.x))
+        # angle = abs(yaw - heading)
+        # if (angle > math.pi/4):
+        #     closestWaypoint += 1
+        #     if (closestWaypoint > len(waypoints)-1):
+        #         closestWaypoint -= 1
+        # return closestWaypoint
 
-    def get_waypoint_velocity(self, waypoint):
-        return waypoint.twist.twist.linear.x
+    # def get_waypoint_velocity(self, waypoint):
+    #     return waypoint.twist.twist.linear.x
 
     def set_waypoint_velocity(self, waypoints, waypoint, velocity):
         waypoints[waypoint].twist.twist.linear.x = velocity

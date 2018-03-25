@@ -32,8 +32,7 @@ class Controller(object):
                                 decel_limit,
                                 accel_limit)
 
-    def control(self, goal_acceleration, goal_angular_velocity, current_velocity, deltat, dbw_enabled):
-        current_speed = sqrt(current_velocity[0]**2 + current_velocity[1]**2)
+    def control(self, goal_acceleration, goal_angular_velocity, deltat, dbw_enabled):
         acceleration = self.throttle_pid.step(goal_acceleration, deltat)
         angular_velocity = self.steer_pid.step(goal_angular_velocity, deltat)
 

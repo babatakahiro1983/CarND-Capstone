@@ -4,7 +4,6 @@ import rospy
 from std_msgs.msg import Bool
 from dbw_mkz_msgs.msg import ThrottleCmd, SteeringCmd, BrakeCmd, SteeringReport
 from geometry_msgs.msg import TwistStamped
-import math
 
 from twist_controller import Controller
 
@@ -70,24 +69,13 @@ class DBWNode(object):
         rospy.Subscriber('/twist_cmd', TwistStamped, self.twist_cmd_cb)
         rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_cb)
 
-
         self.loop()
-
-    def config_callback(self, config, level):
-        rospy.logwarn("Updating Steering PID %s, %s, %s", config["Steer_P"], config["Steer_I"], config["Steer_D"])
-        rospy.logwarn("Updating Throttle PID %s, %s, %s", config["Throttle_P"], config["Throttle_I"], config["Throttle_D"])
-        self.controller.update_steer_pid(config["Steer_P"], config["Steer_I"], config["Steer_D"])
-        self.controller.update_throttle_pid(config["Throttle_P"], config["Throttle_I"], config["Throttle_D"])
-        return config
-
 
     def current_velocity_cb(self, msg):
         self.current_linear = [msg.twist.linear.x, msg.twist.linear.y]
 
     def twist_cmd_cb(self, msg):
         new_goal_acceleration = msg.twist.linear.x
-        rospy.loginfo('new_goal_acceleration: ')
-        rospy.loginfo(new_goal_acceleration)
         if new_goal_acceleration < 0 and self.goal_acceleration > 0:
             self.controller.reset_throttle_pid()
 
@@ -101,28 +89,11 @@ class DBWNode(object):
         rate = rospy.Rate(50) # 50Hz
         while not rospy.is_shutdown():
             # TODO: Get predicted throttle, brake, and steering using `twist_controller`
-            linear_speed = 0.0
-            angular_velocity = 0.0
-            linear_acceleration = 0.0
-            angular_acceleration = 0.0
             deltat = 0.02
-
-            goal_linear_acceleration = 0.0
-            goal_angular_velocity = 0.0
-
             throttle, brake, steering = self.controller.control(self.goal_acceleration,
                                                                 self.goal_yaw_rate,
-                                                                self.current_linear,
                                                                 deltat,
                                                                 self.dbw_enabled)
-
-
-            # You should only publish the control commands if dbw is enabled
-            # throttle, brake, steering = self.controller.control(<proposed linear velocity>,
-            #                                                     <proposed angular velocity>,
-            #                                                     <current linear velocity>,
-            #                                                     <dbw status>,
-            #                                                     <any other argument you need>)
             if brake > 0:
                 brake = brake * BrakeCmd.TORQUE_MAX / -self.decel_limit
 
