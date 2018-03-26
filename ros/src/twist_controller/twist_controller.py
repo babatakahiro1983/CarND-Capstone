@@ -51,11 +51,5 @@ class Controller(object):
         # Return throttle, brake, steer
         return throttle, brake, steer
 
-    def update_steer_pid(self, p, i, d):
-        self.steer_pid.update_gains(p, i, d)
-
-    def update_throttle_pid(self, p, i, d):
-        self.throttle_pid.update_gains(p, i, d)
-
     def reset_throttle_pid(self):
         self.throttle_pid.reset()
