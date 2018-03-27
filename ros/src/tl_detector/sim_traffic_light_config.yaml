@@ -1,4 +1,6 @@
 camera_info:
+  focal_length_x: 0.97428
+  focal_length_y: 1.73205
   image_width: 800
   image_height: 600
 stop_line_positions:
@@ -10,3 +12,15 @@ stop_line_positions:
     - [821.96, 2905.8]
     - [161.76, 2303.82]
     - [351.84, 1574.65]
+tl:
+  tl_classification_model: 'models/tl_classifier_simulator.h5'
+  tl_detection_model: 'models/tl_detector_simulator.h5'
+  classifier_resize_height: 64
+  classifier_resize_width: 32
+  detector_resize_width: 128
+  detector_resize_height: 96
+  projection_threshold: 2
+  projection_min: 200
+  detector_rate: 6
+  is_carla: false
+  color_mode: 'rgb8'

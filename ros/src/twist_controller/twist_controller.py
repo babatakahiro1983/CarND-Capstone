@@ -1,4 +1,3 @@
-from math import atan2, pi, sqrt
 from pid import PID
 
 
@@ -7,8 +6,8 @@ ONE_MPH = 0.44704
 
 
 class Controller(object):
-    def __init__(self, max_angular_velocity, accel_limit, decel_limit):
-        self.max_angular_velocity = max_angular_velocity
+    def __init__(self, max_yaw_rate, accel_limit, decel_limit):
+        self.max_yaw_rate = max_yaw_rate
         self.accel_limit = accel_limit
         self.decel_limit = decel_limit
 
@@ -19,8 +18,8 @@ class Controller(object):
         self.steer_pid = PID(steer_kp,
                              steer_ki,
                              steer_kd,
-                             0. - max_angular_velocity,
-                             max_angular_velocity)
+                             0. - max_yaw_rate,
+                             max_yaw_rate)
         
         throttle_kp = 1
         throttle_ki = 0
@@ -32,23 +31,21 @@ class Controller(object):
                                 decel_limit,
                                 accel_limit)
 
-    def control(self, goal_acceleration, goal_angular_velocity, deltat, dbw_enabled):
-        acceleration = self.throttle_pid.step(goal_acceleration, deltat)
-        angular_velocity = self.steer_pid.step(goal_angular_velocity, deltat)
+    def control(self, target_acceleration, target_yaw_rate, deltat, dbw_enabled):
+        acceleration = self.throttle_pid.step(target_acceleration, deltat)
+        yaw_rate = self.steer_pid.step(target_yaw_rate, deltat)
 
         if not dbw_enabled:
             self.throttle_pid.reset()
             self.steer_pid.reset()
 
         throttle = acceleration
-        steer = angular_velocity * 14.8
+        steer = yaw_rate * 14.8
         brake = 0
         if throttle < 0.:
             brake = 0. - throttle
             throttle = 0.
 
-        # TODO: Change the arg, kwarg list to suit your needs
-        # Return throttle, brake, steer
         return throttle, brake, steer
 
     def reset_throttle_pid(self):

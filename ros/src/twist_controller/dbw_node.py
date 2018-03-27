@@ -55,43 +55,37 @@ class DBWNode(object):
                                          BrakeCmd, queue_size=1)
 
         self.dbw_enabled = False
-
-
-        # TODO: Create `Controller` object
         self.controller = Controller(max_steer_angle, accel_limit, decel_limit)
-
-        self.goal_acceleration = 0
-        self.goal_yaw_rate = 0.
+        self.target_acceleration = 0
+        self.target_yaw_rate = 0.
         self.current_linear = [0,0]
 
-        # TODO: Subscribe to all the topics you need to
-        rospy.Subscriber('/current_velocity', TwistStamped, self.current_velocity_cb)
-        rospy.Subscriber('/twist_cmd', TwistStamped, self.twist_cmd_cb)
-        rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_cb)
+        rospy.Subscriber('/current_velocity', TwistStamped, self.current_velocity_call_back)
+        rospy.Subscriber('/twist_cmd', TwistStamped, self.twist_cmd_call_back)
+        rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_call_back)
 
         self.loop()
 
-    def current_velocity_cb(self, msg):
+    def current_velocity_call_back(self, msg):
         self.current_linear = [msg.twist.linear.x, msg.twist.linear.y]
 
-    def twist_cmd_cb(self, msg):
-        new_goal_acceleration = msg.twist.linear.x
-        if new_goal_acceleration < 0 and self.goal_acceleration > 0:
+    def twist_cmd_call_back(self, msg):
+        new_target_acceleration = msg.twist.linear.x
+        if new_target_acceleration < 0 and self.target_acceleration > 0:
             self.controller.reset_throttle_pid()
 
-        self.goal_acceleration = new_goal_acceleration
-        self.goal_yaw_rate = msg.twist.angular.z
+        self.target_acceleration = new_target_acceleration
+        self.target_yaw_rate = msg.twist.angular.z
 
-    def dbw_cb(self, msg):
+    def dbw_call_back(self, msg):
         self.dbw_enabled = msg.data
 
     def loop(self):
         rate = rospy.Rate(50) # 50Hz
         while not rospy.is_shutdown():
-            # TODO: Get predicted throttle, brake, and steering using `twist_controller`
             deltat = 0.02
-            throttle, brake, steering = self.controller.control(self.goal_acceleration,
-                                                                self.goal_yaw_rate,
+            throttle, brake, steering = self.controller.control(self.target_acceleration,
+                                                                self.target_yaw_rate,
                                                                 deltat,
                                                                 self.dbw_enabled)
             if brake > 0:

@@ -38,42 +38,36 @@ class TLDetector(object):
         self.lights = []
         self.distance_to_tl_threshold = 40
         self.state = TrafficLight.UNKNOWN
-        # self.last_wp = -1
         self.state_count = 0
         self.has_image = False
-
-        config_string = rospy.get_param("/traffic_light_config")
-        self.config = yaml.load(config_string)
-
-        self.light_classifier = TLClassifier()
-        model = load_model('models/tl_classifier_simulator.h5')
-        width = 32
-        height = 64
-        self.light_classifier.setup_classifier(model, width, height)
-
-        self.detector_model = load_model('models/tl_detector_simulator.h5', custom_objects={'dice_coef_loss': dice_coef_loss, 'dice_coef': dice_coef })
-        self.detector_model._make_predict_function()
-        self.resize_width = 128
-        self.resize_height = 96
-
-        self.resize_height_ratio = 600/float(self.resize_height)
-        self.resize_width_ratio = 800/float(self.resize_width)
-        self.middle_col = self.resize_width/2
-        self.is_carla = False
-        self.projection_threshold = 2
-        self.projection_min = 200
-        self.color_mode = 'rgb8'
-
-        # self.ctr = 0
-        # self.ctr_2 = 0
         self.dist_pre = 0
         self.last_state = TrafficLight.UNKNOWN
         self.car_curr_vel = None
         self.car_dist = 0
 
-        rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
-        rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
-        rospy.Subscriber('/current_velocity', TwistStamped, self.current_velocity_cb)
+        config_string = rospy.get_param("/traffic_light_config")
+        self.config = yaml.load(config_string)
+
+        self.light_classifier = TLClassifier()
+        model = load_model(self.config['tl']['tl_classification_model'])
+        resize_width = self.config['tl']['classifier_resize_width']
+        resize_height = self.config['tl']['classifier_resize_height']
+        self.light_classifier.setup_classifier(model, resize_width, resize_height)
+        self.detector_model = load_model(self.config['tl']['tl_detection_model'], custom_objects={'dice_coef_loss': dice_coef_loss, 'dice_coef': dice_coef })
+        self.detector_model._make_predict_function()
+        self.resize_width = self.config['tl']['detector_resize_width']
+        self.resize_height = self.config['tl']['detector_resize_height']
+        self.resize_height_ratio = self.config['camera_info']['image_height']/float(self.resize_height)
+        self.resize_width_ratio = self.config['camera_info']['image_width']/float(self.resize_width)
+        self.middle_col = self.resize_width/2
+        self.is_carla = self.config['tl']['is_carla']
+        self.projection_threshold = self.config['tl']['projection_threshold']
+        self.projection_min = self.config['tl']['projection_min']
+        self.color_mode = self.config['tl']['color_mode']
+
+        rospy.Subscriber('/current_pose', PoseStamped, self.pose_call_back)
+        rospy.Subscriber('/base_waypoints', Lane, self.waypoints_call_back)
+        rospy.Subscriber('/current_velocity', TwistStamped, self.current_velocity_call_back)
 
         '''
         /vehicle/traffic_lights provides you with the location of the traffic light in 3D map space and
@@ -82,29 +76,26 @@ class TLDetector(object):
         simulator. When testing on the vehicle, the color state will not be available. You'll need to
         rely on the position of the light and the camera image to predict it.
         '''
-        rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray, self.traffic_cb)
-        rospy.Subscriber('/image_color', Image, self.image_cb)
+        rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray, self.traffic_call_back)
+        rospy.Subscriber('/image_color', Image, self.image_call_back)
 
         self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', CustomTrafficLight, queue_size=1)
-
         self.bridge = CvBridge()
-
-        detector_rate = rospy.Rate(6)
-
+        detector_rate = rospy.Rate(self.config['tl']['detector_rate'])
         while not rospy.is_shutdown():
             self.find_traffic_lights()
             detector_rate.sleep()
 
-    def pose_cb(self, msg):
+    def pose_call_back(self, msg):
         self.pose = msg
 
-    def waypoints_cb(self, waypoints):
+    def waypoints_call_back(self, waypoints):
         self.waypoints = waypoints.waypoints
 
-    def traffic_cb(self, msg):
+    def traffic_call_back(self, msg):
         self.lights = msg.lights
 
-    def image_cb(self, msg):
+    def image_call_back(self, msg):
         """Identifies red lights in the incoming camera image and publishes the index
             of the waypoint closest to the red light's stop line to /traffic_waypoint
 
@@ -115,7 +106,7 @@ class TLDetector(object):
         self.has_image = True
         self.camera_image = msg
 
-    def current_velocity_cb(self, msg):
+    def current_velocity_call_back(self, msg):
         curr_lin = [msg.twist.linear.x, msg.twist.linear.y]
         self.car_curr_vel = math.sqrt(curr_lin[0]**2 + curr_lin[1]**2)
 
@@ -149,7 +140,7 @@ class TLDetector(object):
                 self.upcoming_red_light_pub.publish(tl_result)
                 self.state_count += 1
 
-    def dist_to_point(self, pose, wp_pose):
+    def distance_to_point(self, pose, wp_pose):
         x_squared = pow((pose.position.x - wp_pose.position.x), 2)
         y_squared = pow((pose.position.y - wp_pose.position.y), 2)
         dist = sqrt(x_squared + y_squared)
@@ -173,7 +164,7 @@ class TLDetector(object):
         else:
 
             for idx, wp in enumerate(waypoints):
-                dist = self.dist_to_point(pose, wp.pose.pose)
+                dist = self.distance_to_point(pose, wp.pose.pose)
                 if(dist < min_dist):
                     min_dist = dist
                     closest_wp_idx = idx
@@ -217,8 +208,8 @@ class TLDetector(object):
         resize_image = cv2.cvtColor(cv2.resize(cv_image, (self.resize_width, self.resize_height)), cv2.COLOR_RGB2GRAY)
         resize_image = resize_image[..., np.newaxis]
         if self.is_carla:
-            mean = np.mean(resize_image) # mean for data centering
-            std = np.std(resize_image) # std for data normalization
+            mean = int(np.mean(resize_image)) # mean for data centering
+            std = int(np.std(resize_image)) # std for data normalization
 
             resize_image -= mean
             resize_image /= std
@@ -247,22 +238,14 @@ class TLDetector(object):
         if self.pose is not None and self.has_image:
             tl_id = self.get_closest_waypoint(self.pose.pose, self.lights)
             if (tl_id >= 0):
-
-                # List of positions that correspond to the line to stop in front of for a given intersection
-                # tl = self.lights[tl_id]
                 stop_line = self.config['stop_line_positions'][tl_id]
                 stop_line_pose = Pose()
                 stop_line_pose.position.x = stop_line[0]
                 stop_line_pose.position.y = stop_line[1]
-
                 wp_id = self.get_closest_waypoint(stop_line_pose, self.waypoints)
-
                 if (wp_id == -1):
                     return -1, TrafficLight.UNKNOWN
-
-                # closest_wp = self.waypoints[wp_id]
-                # waypoint_dist = self.dist_to_point(closest_wp.pose.pose, tl.pose.pose)
-                self.car_dist = self.dist_to_point(self.pose.pose, stop_line_pose)
+                self.car_dist = self.distance_to_point(self.pose.pose, stop_line_pose)
                 state = TrafficLight.UNKNOWN
                 if (self.car_dist < self.distance_to_tl_threshold and self.car_dist <= self.dist_pre):
                     cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, self.color_mode)
@@ -279,9 +262,6 @@ class TLDetector(object):
                             rospy.loginfo("TrafficLight is NO")
                         else:
                             rospy.loginfo("TrafficLight is UN")
-                        #
-                        # rospy.loginfo(state_txt)
-                        #
                         # cv2.imwrite("Image_"+ str(self.ctr) + "_" + state_txt + "_" + str(self.car_dist) +"_.jpg", cv2.cvtColor(
                         #     tl_image,
                         # cv2.COLOR_BGR2RGB))
